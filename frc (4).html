@@ -596,7 +596,7 @@ function fireNoteProjectile(robot, alliance, isShooting) {
     if (robot.inventory <= 0) return false;
     const rcx = robot.x + robot.model.w / 2;
     const rcy = robot.y + robot.model.h / 2;
-    let launchAngle = robot.angle;
+    const launchAngle = robot.angle;
     let speed = 16;
     if (isShooting) {
         const z = zones.find(z => z.type === 'speaker' && z.side === alliance);
@@ -625,104 +625,88 @@ function fireNoteProjectile(robot, alliance, isShooting) {
 }
 
 function tryScoreNote(robot, alliance) {
+
     if (robot.inventory <= 0) return false;
 
     const rcx = robot.x + robot.model.w / 2;
     const rcy = robot.y + robot.model.h / 2;
-    const now = Date.now();
 
-    // =========================================================
-    // DETERMINE IF ROBOT IS INSIDE ITS ALLIANCE SHOOTING ZONE
-    // =========================================================
+    // =====================================================
+    // FIND SPEAKER
+    // =====================================================
 
-    // Red shoots from left side of field
-    // Blue shoots from right side of field
+    const speaker = zones.find(
+        z => z.type === 'speaker' && z.side === alliance
+    );
+
+    if (!speaker) return false;
+
+    const targetX = speaker.x + speaker.w / 2;
+    const targetY = speaker.y + speaker.h / 2;
+
+    // =====================================================
+    // CALCULATE TARGET ANGLE
+    // =====================================================
+
+    const desiredAngle = Math.atan2(
+        targetY - rcy,
+        targetX - rcx
+    );
+
+    // =====================================================
+    // ROTATE ROBOT TOWARD TARGET
+    // =====================================================
+
+    let angleDiff = desiredAngle - robot.angle;
+
+    while (angleDiff > Math.PI)
+        angleDiff -= Math.PI * 2;
+
+    while (angleDiff < -Math.PI)
+        angleDiff += Math.PI * 2;
+
+    const turnSpeed = 0.08;
+
+    // NOT ALIGNED YET
+    if (Math.abs(angleDiff) > 0.08) {
+
+        robot.angle +=
+            Math.sign(angleDiff) *
+            Math.min(turnSpeed, Math.abs(angleDiff));
+
+        return false;
+    }
+
+    // =====================================================
+    // LOCK AIM
+    // =====================================================
+
+    robot.angle = desiredAngle;
+
+    // =====================================================
+    // CHECK IF IN ALLIANCE SHOOTING ZONE
+    // =====================================================
+
     const inAllianceZone =
         alliance === 'red'
             ? rcx < FIELD_W * 0.5
             : rcx > FIELD_W * 0.5;
 
-    // =========================================================
-    // OUTSIDE ZONE = FORCE PASS MODE
-    // =========================================================
+    // =====================================================
+    // OUTSIDE ZONE = PASS
+    // =====================================================
 
     if (!inAllianceZone) {
         return fireNoteProjectile(robot, alliance, false);
     }
 
-    // =========================================================
-    // AMP SCORING
-    // =========================================================
-
-    const isAmplified =
-        alliance === 'red'
-            ? now < redAmplifiedUntil
-            : now < blueAmplifiedUntil;
-
-    const amp = zones.find(
-        z => z.type === 'amp' && z.side === alliance
-    );
-
-    if (amp) {
-
-        const acx = amp.x + amp.w / 2;
-        const acy = amp.y + amp.h / 2;
-
-        if (Math.hypot(rcx - acx, rcy - acy) < SCORE_DIST) {
-
-            robot.inventory--;
-
-            if (alliance === 'red') {
-
-                scoreRed += 1;
-
-                document.getElementById(
-                    'scoreRedDisplay'
-                ).innerText = scoreRed;
-
-                redAmpNotes++;
-
-                if (redAmpNotes >= 2) {
-                    redAmplifiedUntil = now + 10000;
-                    redAmpNotes = 0;
-                }
-
-            } else {
-
-                scoreBlue += 1;
-
-                document.getElementById(
-                    'scoreBlueDisplay'
-                ).innerText = scoreBlue;
-
-                blueAmpNotes++;
-
-                if (blueAmpNotes >= 2) {
-                    blueAmplifiedUntil = now + 10000;
-                    blueAmpNotes = 0;
-                }
-            }
-
-            document.getElementById(
-                alliance === 'red'
-                    ? 'heldRed'
-                    : 'heldBlue'
-            ).innerText = robot.inventory;
-
-            robot.scoreFlash = 18;
-            robot.scoreFlashPts = 1;
-
-            return true;
-        }
-    }
-
-    // =========================================================
-    // INSIDE ALLIANCE ZONE = NORMAL SPEAKER SHOT
-    // =========================================================
+    // =====================================================
+    // INSIDE ZONE = SCORE SHOT
+    // =====================================================
 
     return fireNoteProjectile(robot, alliance, true);
 }
-
+    
 function updateProjectiles() {
     const now = Date.now();
     projectiles = projectiles.filter(p => {
