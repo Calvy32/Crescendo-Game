@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FRC 2024 — CRESCENDO (Accurate Field)</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: #0a0a0c;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            max-width: 98vw;
+            max-height: 92vh;
+            width: auto;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+        #timer-panel {
+            position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center;
+            background: #1a1a1f; border: 1px solid #2a2a32;
+            border-radius: 10px; padding: 6px 24px 5px;
+            pointer-events: none; z-index: 15;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            min-width: 200px;
+        }
+        #match-clock {
+            font-size: 2.0rem; font-weight: 800; letter-spacing: 1px;
+            color: #6b6b75; line-height: 1; font-family: 'Segoe UI', system-ui, sans-serif;
+            transition: color 0.2s, text-shadow 0.2s;
+        }
+        #match-clock.stopped     { color: #6b6b75; }
+        #match-clock.auto-phase  { color: #a78bfa; text-shadow: 0 0 16px rgba(167,139,250,0.55); }
+        #match-clock.endgame-phase { color: #f97316; text-shadow: 0 0 16px rgba(249,115,22,0.65); }
+        #match-clock:not(.stopped):not(.auto-phase):not(.endgame-phase) {
+            color: #fff; text-shadow: 0 0 12px rgba(255,255,255,0.35);
+        }
+        #phase-label {
+            font-size: 0.6rem; font-weight: 700; letter-spacing: 3px;
+            color: #8a8a93; margin-top: 3px; text-transform: uppercase;
+        }
+        #phase-timer {
+            font-size: 0.8rem; font-weight: 800; letter-spacing: 1px;
+            margin-top: 1px; color: #aaa; min-height: 1em;
+        }
+
+        .hud {
+            position: absolute; top: 78px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 18px; align-items: center;
+            background: #16161b; padding: 8px 22px;
+            border-radius: 10px; border: 1px solid #2a2a32;
+            border-bottom: 3px solid #fbbf24;
+            transition: border-bottom-color 0.15s;
+            z-index: 10;
+        }
+        .stat { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        .stat span { font-size: 1.15rem; margin-left: 6px; }
+        .warning { color: #fff !important; font-weight: 900; background: #ef4444; padding: 0 5px; border-radius: 4px; }
+        .hud .divider { color: #444; font-size: 0.8rem; padding: 0 2px; }
+
+        .controls-wrapper-blue {
+            position: absolute; top: 14px; right: 12px; z-index: 20;
+            display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+            max-height: 95vh; overflow-y: auto; padding-left: 4px;
+        }
+        .controls-wrapper-red {
+            position: absolute; top: 14px; left: 12px; z-index: 20;
+            display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+            max-height: 95vh; overflow-y: auto; padding-right: 4px;
+        }
+        .controls-wrapper-blue::-webkit-scrollbar,
+        .controls-wrapper-red::-webkit-scrollbar { width: 6px; }
+        .controls-wrapper-blue::-webkit-scrollbar-thumb,
+        .controls-wrapper-red::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+        #toggle-controls-btn-blue, #toggle-controls-btn-red {
+            background: #1c1c22; color: #d1d5db; border: 1px solid #3a3a44;
+            padding: 7px 14px; font-size: 0.7rem; font-weight: 800;
+            border-radius: 8px; letter-spacing: 1px; cursor: pointer;
+        }
+        #toggle-controls-btn-blue:hover { background: #1e293b; border-color: #3b82f6; }
+        #toggle-controls-btn-red:hover  { background: #2a1414; border-color: #ef4444; }
+
+        #show-controls-btn-blue, #show-controls-btn-red {
+            background: #1c1c22; color: #fff; border: 1px solid #3b82f6;
+            padding: 7px 14px; font-size: 0.7rem; font-weight: 800;
+            border-radius: 8px; letter-spacing: 1px; cursor: pointer; width: 100%;
+        }
+        #show-controls-btn-red { border-color: #ef4444; }
+
+        .controls-blue, .controls-red {
+            display: flex; flex-direction: column; gap: 10px; width: 210px;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .controls-blue { transform-origin: top left; }
+        .controls-red  { transform-origin: top right; }
+        .controls-blue.collapsed, .controls-red.collapsed {
+            opacity: 0; pointer-events: none; transform: scale(0.95); height: 0; overflow: hidden;
+        }
+
+        .player-card {
+            background: #16161b; border: 1px solid #2a2a32; border-radius: 12px;
+            padding: 10px; display: flex; flex-direction: column; gap: 6px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+        }
+        .player-card.blue-card { border-color: #1e3a8a; }
+        .player-card.red-card  { border-color: #7f1d1d; }
+
+        .player-card-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 4px 4px; border-bottom: 1px solid #24242c;
+            margin-bottom: 4px;
+        }
+        .player-card-title {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.85rem; font-weight: 800; letter-spacing: 1px;
+        }
+        .player-card-title .dot {
+            width: 10px; height: 10px; border-radius: 50%;
+        }
+        .blue-card .dot { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.6); }
+        .red-card  .dot { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
+        .player-card-collapse {
+            background: transparent; border: 1px solid #3a3a44; color: #aaa;
+            width: 22px; height: 22px; border-radius: 6px; font-size: 1rem;
+            line-height: 1; padding: 0; cursor: pointer; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .player-card-collapse:hover { background: #24242c; color: #fff; }
+
+        .player-card-body {
+            display: flex; flex-direction: column; gap: 5px;
+            transition: opacity 0.15s, max-height 0.2s, padding 0.2s;
+            overflow: hidden;
+        }
+        .player-card.collapsed .player-card-body {
+            max-height: 0; opacity: 0; padding: 0;
+        }
+        .player-card .player-card-body { max-height: 600px; }
+
+        .pc-btn {
+            padding: 8px 10px; border-radius: 6px; border: none; cursor: pointer;
+            font-weight: 800; font-size: 0.72rem; letter-spacing: 1px;
+            text-transform: uppercase; transition: filter 0.1s, transform 0.1s;
+            text-align: center;
+        }
+        .pc-btn:active { transform: scale(0.97); }
+        .pc-btn:hover { filter: brightness(1.1); }
+        .pc-btn.on-btn          { background: #22c55e; color: #062611; }
+        .pc-btn.on-btn.disabled { background: #4b5563; color: #d1d5db; }
+        .pc-btn.red-btn         { background: #dc2626; color: #fff; }
+        .pc-btn.blue-btn        { background: #2563eb; color: #fff; }
+
+        .input-select {
+            padding: 8px 24px 8px 10px; border-radius: 6px; border: none; cursor: pointer;
+            font-weight: 800; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px;
+            width: 100%; appearance: none; -webkit-appearance: none;
+            background-image: linear-gradient(45deg, transparent 50%, #fff 50%), linear-gradient(135deg, #fff 50%, transparent 50%);
+            background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+            background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+            color: #fff;
+        }
+        .input-select.red-team { background-color: #dc2626; }
+        .input-select.blue-team { background-color: #2563eb; }
+        .input-select option { background: #1a1a1a; color: white; }
+        .start-select {
+            padding: 8px 24px 8px 10px; border-radius: 6px; border: none; cursor: pointer;
+            font-weight: 800; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px;
+            width: 100%; appearance: none; -webkit-appearance: none;
+            background-image: linear-gradient(45deg, transparent 50%, #fff 50%), linear-gradient(135deg, #fff 50%, transparent 50%);
+            background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+            background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+            color: #fff;
+        }
+        .start-select.red-team { background-color: #dc2626; }
+        .start-select.blue-team { background-color: #2563eb; }
+        .start-select option { background: #1a1a1a; color: white; }
+
+        #start-area {
+            position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+            z-index: 20; display: flex; flex-direction: row; align-items: center; gap: 8px;
+            background: #16161b; padding: 8px 12px; border-radius: 12px;
+            border: 1px solid #2a2a32; box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+        }
+        #start-btn-main {
+            padding: 9px 26px; font-size: 0.85rem; font-weight: 900;
+            background: #22c55e; color: #062611; border: none;
+            border-radius: 8px; cursor: pointer; letter-spacing: 1px;
+            transition: background 0.15s, transform 0.1s;
+        }
+        #start-btn-main:hover  { background: #16a34a; }
+        #start-btn-main:active { transform: scale(0.96); }
+        #start-btn-main.running { background: #f97316; color: #1a0a00; }
+        #reset-btn-center {
+            background: #2a2a32; color: #fff; border: 1px solid #3a3a44;
+            padding: 8px 12px; border-radius: 8px; font-size: 0.68rem; font-weight: 800;
+            cursor: pointer; letter-spacing: 1px;
+        }
+        #reset-btn-center:hover { background: #3a3a44; }
+
+        #gp-status-bottom {
+            position: absolute; bottom: 12px; left: 14px; z-index: 25;
+            font-size: 0.65rem; color: #888; line-height: 1.5;
+            background: rgba(15,15,20,0.85); padding: 6px 10px;
+            border-radius: 6px; border: 1px solid #2a2a32; font-family: monospace;
+            max-width: 360px;
+        }
+
+        #shift-flash {
+            position: absolute; inset: 0; pointer-events: none; z-index: 50;
+            opacity: 0; background: rgba(255,255,255,0.08);
+            transition: opacity 0.15s;
+        }
+        #shift-flash.flash { opacity: 1; }
+        #auto-winner {
+            position: absolute; top: 200px; left: 50%; transform: translateX(-50%);
+            font-size: 0.72rem; font-weight: 900; letter-spacing: 2px; color: #a78bfa;
+            opacity: 0; transition: opacity 0.5s; pointer-events: none; z-index: 20;
+        }
+        #auto-winner.visible { opacity: 1; }
+
+        #controls-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+            opacity: 1; transition: opacity 0.2s;
+        }
+        #controls-modal.hidden { opacity: 0; pointer-events: none; }
+        .modal-content {
+            background: #111; border: 2px solid #444; border-radius: 8px;
+            padding: 25px 40px; text-align: center; box-shadow: 0 0 40px rgba(0,0,0,1);
+            max-width: 420px; width: 90%;
+            max-height: 90vh; overflow-y: auto;
+        }
+        .modal-content h2 { color: #fbbf24; margin-top: 0; font-weight: 900; letter-spacing: 2px; margin-bottom: 20px;}
+        .control-section { text-align: left; margin-bottom: 15px; background: rgba(255,255,255,0.05); padding: 12px 16px; border-radius: 6px; border-left: 3px solid #666;}
+        .control-section h3 { margin: 0 0 8px 0; color: #a78bfa; font-size: 0.95rem; letter-spacing: 1px; text-transform: uppercase; }
+        .control-section p { margin: 6px 0; font-size: 0.9rem; color: #ccc; }
+        .control-section b { color: #fff; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        #close-controls-btn {
+            margin-top: 15px; padding: 10px 30px; font-size: 0.9rem; width: 100%;
+            background: #444; border: 1px solid #666; color: white; border-radius: 6px;
+            font-weight: 800; cursor: pointer;
+        }
+        #close-controls-btn:hover { background: #555; }
+    </style>
+</head>
+<body>
+
+<div id="shift-flash"></div>
+
+<div id="controls-modal" class="hidden">
+    <div class="modal-content">
+        <h2>GAME CONTROLS — CRESCENDO</h2>
+        <div class="control-section" style="border-left-color:#ef4444;background:rgba(239,68,68,0.08);">
+            <h3 style="color:#ef4444;">P1 — Red · Keyboard 1</h3>
+            <p><b>W</b><b>A</b><b>S</b><b>D</b> = Move &nbsp; <b>Q</b>/<b>E</b> = Rotate</p>
+            <p><b>Space</b> = Shoot Note at Speaker (or Amp if adjacent) &nbsp; <b>F</b> = Pass</p>
+        </div>
+        <div class="control-section" style="border-left-color:#ef4444;background:rgba(239,68,68,0.05);">
+            <h3 style="color:#ef4444;">P2 — Red · Controller 1</h3>
+            <p><b>Left Stick</b> = Move &nbsp; <b>Right Stick X</b> = Rotate</p>
+            <p><b>Right Trigger / Face Btn</b> = Score Note</p>
+        </div>
+        <div class="control-section" style="border-left-color:#3b82f6;background:rgba(59,130,246,0.08);">
+            <h3 style="color:#3b82f6;">P3 — Blue · Keyboard 2</h3>
+            <p><b>↑</b><b>↓</b><b>←</b><b>→</b> = Move &nbsp; <b>N</b>/<b>M</b> = Rotate</p>
+            <p><b>RShift</b> = Shoot Note at Speaker (or Amp if adjacent) &nbsp; <b>/</b> = Pass</p>
+        </div>
+        <div class="control-section" style="border-left-color:#3b82f6;background:rgba(59,130,246,0.05);">
+            <h3 style="color:#3b82f6;">P4 — Blue · Controller 2</h3>
+            <p><b>Left Stick</b> = Move &nbsp; <b>Right Stick X</b> = Rotate</p>
+            <p><b>Right Trigger / Face Btn</b> = Score Note</p>
+        </div>
+        <div class="control-section" style="border-left-color:#fb923c;background:rgba(251,146,60,0.08);">
+            <h3 style="color:#fb923c;">SCORING — CRESCENDO</h3>
+            <p>Drive into a <b>Note</b> (orange ring) to pick it up.</p>
+            <p>Drive to your <b>Speaker</b> and press Score: <b>+2 pts</b> (or <b>+5</b> when Amplified)</p>
+            <p>Drive to your <b>Amp</b> and press Score: <b>+1 pt</b>. Score 2 in Amp → <b>Amplify Speaker</b> for 10s.</p>
+        </div>
+        <button id="close-controls-btn">CLOSE</button>
+    </div>
+</div>
+
+<div id="timer-panel">
+    <div id="match-clock" class="stopped">2:30</div>
+    <div id="phase-label">MATCH NOT STARTED</div>
+    <div id="phase-timer"></div>
+</div>
+
+<div id="main-hud" class="hud">
+    <div class="stat" style="color:#ef4444;">RED <span id="scoreRedDisplay">0</span></div>
+    <div class="stat" style="color:#888;">AMP <span id="redAmpDisplay">0/2</span></div>
+    <div class="divider">|</div>
+    <div class="stat" style="color:#fff;">HELD <span id="heldRed">0</span> <span id="heldBlue">0</span></div>
+    <div class="divider">|</div>
+    <div class="stat" style="color:#888;">AMP <span id="blueAmpDisplay">0/2</span></div>
+    <div class="stat" style="color:#3b82f6;">BLUE <span id="scoreBlueDisplay">0</span></div>
+</div>
+
+<div id="auto-winner">AUTO WON BY RED</div>
+
+<div class="controls-wrapper-red">
+    <button id="toggle-controls-btn-red">☰ SHOW RED</button>
+    <div id="control-panel-red" class="controls-red collapsed">
+        <button id="show-controls-btn-red">HOW TO PLAY</button>
+        <div id="card-p1" class="player-card red-card">
+            <div class="player-card-header">
+                <div class="player-card-title"><div class="dot"></div> P1 — RED</div>
+                <button class="player-card-collapse" data-target="card-p1">−</button>
+            </div>
+            <div class="player-card-body">
+                <button id="p1-toggle" class="pc-btn on-btn">P1: ON</button>
+                <select id="p1-input-select" class="input-select red-team" data-player="p1">
+                    <option value="keyboard" selected>P1: KEYBOARD 1</option>
+                    <option value="keyboard2">P1: KEYBOARD 2</option>
+                    <option value="controller0">P1: CONTROLLER 0</option>
+                    <option value="controller1">P1: CONTROLLER 1</option>
+                </select>
+                <select id="p1-start-select" class="start-select red-team" data-player="p1">
+                    <option value="0">START: TOP WING</option>
+                    <option value="1" selected>START: CENTER</option>
+                    <option value="2">START: BOTTOM WING</option>
+                </select>
+            </div>
+        </div>
+        <div id="card-p2" class="player-card red-card">
+            <div class="player-card-header">
+                <div class="player-card-title"><div class="dot"></div> P2 — RED</div>
+                <button class="player-card-collapse" data-target="card-p2">−</button>
+            </div>
+            <div class="player-card-body">
+                <button id="p2-toggle" class="pc-btn on-btn disabled">P2: OFF</button>
+                <select id="p2-input-select" class="input-select red-team" data-player="p2">
+                    <option value="keyboard">P2: KEYBOARD 1</option>
+                    <option value="keyboard2">P2: KEYBOARD 2</option>
+                    <option value="controller0" selected>P2: CONTROLLER 0</option>
+                    <option value="controller1">P2: CONTROLLER 1</option>
+                </select>
+                <select id="p2-start-select" class="start-select red-team" data-player="p2">
+                    <option value="0" selected>START: TOP WING</option>
+                    <option value="1">START: CENTER</option>
+                    <option value="2">START: BOTTOM WING</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="controls-wrapper-blue">
+    <button id="toggle-controls-btn-blue">☰ SHOW BLUE</button>
+    <div id="control-panel-blue" class="controls-blue collapsed">
+        <button id="show-controls-btn-blue">HOW TO PLAY</button>
+        <div id="card-p3" class="player-card blue-card">
+            <div class="player-card-header">
+                <div class="player-card-title"><div class="dot"></div> P3 — BLUE</div>
+                <button class="player-card-collapse" data-target="card-p3">−</button>
+            </div>
+            <div class="player-card-body">
+                <button id="p3-toggle" class="pc-btn on-btn disabled">P3: OFF</button>
+                <select id="p3-input-select" class="input-select blue-team" data-player="p3">
+                    <option value="keyboard">P3: KEYBOARD 1</option>
+                    <option value="keyboard2" selected>P3: KEYBOARD 2</option>
+                    <option value="controller0">P3: CONTROLLER 0</option>
+                    <option value="controller1" selected>P3: CONTROLLER 1</option>
+                </select>
+                <select id="p3-start-select" class="start-select blue-team" data-player="p3">
+                    <option value="0">START: TOP WING</option>
+                    <option value="1" selected>START: CENTER</option>
+                    <option value="2">START: BOTTOM WING</option>
+                </select>
+            </div>
+        </div>
+        <div id="card-p4" class="player-card blue-card">
+            <div class="player-card-header">
+                <div class="player-card-title"><div class="dot"></div> P4 — BLUE</div>
+                <button class="player-card-collapse" data-target="card-p4">−</button>
+            </div>
+            <div class="player-card-body">
+                <button id="p4-toggle" class="pc-btn on-btn disabled">P4: OFF</button>
+                <select id="p4-input-select" class="input-select blue-team" data-player="p4">
+                    <option value="keyboard">P4: KEYBOARD 1</option>
+                    <option value="keyboard2">P4: KEYBOARD 2</option>
+                    <option value="controller0">P4: CONTROLLER 0</option>
+                    <option value="controller1" selected>P4: CONTROLLER 1</option>
+                </select>
+                <select id="p4-start-select" class="start-select blue-team" data-player="p4">
+                    <option value="0" selected>START: TOP WING</option>
+                    <option value="1">START: CENTER</option>
+                    <option value="2">START: BOTTOM WING</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="start-area">
+    <button id="reset-btn-center">RESET FIELD</button>
+    <button id="start-btn-main">▶ START MATCH</button>
+</div>
+
+<div id="gp-status-bottom">Gamepads: ❌ 0  ❌ 1  ❌ 2  ❌ 3  |  P1:GP0  P2:GP0  P3:GP1  P4:GP1</div>
+
+<canvas id="field"></canvas>
+
+<script>
+// ===================================================================
+// AUDIO PLACEHOLDER
+function playSound(key) {}
+
+// ===================================================================
+// FIELD DIMENSIONS — FRC 2024 CRESCENDO
+const S = 1.6;
+const FIELD_W = 651.25 * S;   
+const FIELD_H = 323.25 * S;   
+const WALL_VISUAL = 20;
+
+const NOTE_R = 7 * S;   
+const NOTE_HOLE = 4 * S; 
+
+const BOT_MODELS = {
+    'Standard': { accel: 0.38, rotSpeed: 0.036, capacity: 1, w: 41, h: 41 }
+};
+
+const canvas = document.getElementById('field');
+const ctx = canvas.getContext('2d');
+canvas.width = FIELD_W + (WALL_VISUAL * 2);
+canvas.height = FIELD_H + (WALL_VISUAL * 2);
+
+const MATCH_PHASES = [
+    { name: 'AUTO',    start: 0,   end: 15,  canMove: true },
+    { name: 'TELEOP',  start: 15,  end: 120, canMove: true },
+    { name: 'END GAME',start: 120, end: 150, canMove: true }
+];
+const MATCH_TOTAL = 150;
+
+// CRESCENDO FIELD GEOMETRY (Accurate to Image)
+const SPK_W = 60 * S, SPK_H = 80 * S;
+const AMP_W = 40 * S, AMP_H = 30 * S;
+const SRC_W = 70 * S, SRC_H = 70 * S;
+const WING_X = 138 * S; 
+
+const SCORE_DIST = 60 * S;
+const PICKUP_DIST = NOTE_R + 24;
+
+let matchRunning = false, startCountdown = 0, countdownInterval = null, matchElapsed = 0, endCooldown = 0;
+let autoPhaseEnded = false, autoWinner = 'red', autoScoreRed = 0, autoScoreBlue = 0;
+let currentPhaseIdx = -1;
+let scoreRed = 0, scoreBlue = 0;
+let redAmpNotes = 0, blueAmpNotes = 0;
+let redAmplifiedUntil = 0, blueAmplifiedUntil = 0; 
+
+let p1Enabled = true, p2Enabled = false, p3Enabled = false, p4Enabled = false;
+let p1Input = 'keyboard', p2Input = 'controller', p3Input = 'keyboard2', p4Input = 'controller';
+let p1StartIdx = 1, p2StartIdx = 0, p3StartIdx = 1, p4StartIdx = 0;
+let p1FreezeUntil = 0, p2FreezeUntil = 0, p3FreezeUntil = 0, p4FreezeUntil = 0;
+let gamepads = [null, null, null, null];
+let p1GamepadIndex = 0, p2GamepadIndex = 0, p3GamepadIndex = 1, p4GamepadIndex = 1;
+
+let notes = [], obstacles = [], zones = [], projectiles = [];
+let keys = {};
+
+// Cooldown (ms) between source spawns so they don't flood instantly
+const SOURCE_SPAWN_COOLDOWN = 1500;
+const SOURCE_NEARBY_RADIUS = 90 * S;
+const SOURCE_MAX_NEARBY = 3;
+let lastSourceSpawn = { red: 0, blue: 0 };
+
+function addZone(x, y, w, h, type, side) {
+    const el = { x, y, w, h, type, side };
+    zones.push(el);
+}
+
+function initField() {
+    obstacles = []; zones = [];
+    addZone(0, FIELD_H/2 - SPK_H/2, SPK_W, SPK_H, 'speaker', 'red');
+    addZone(FIELD_W - SPK_W, FIELD_H/2 - SPK_H/2, SPK_W, SPK_H, 'speaker', 'blue');
+    addZone(100 * S, 0, AMP_W, AMP_H, 'amp', 'red');
+    addZone(FIELD_W - 100 * S - AMP_W, 0, AMP_W, AMP_H, 'amp', 'blue');
+    // Sources are corner chutes (diagonal triangles)
+    const redSrc  = { ...{x: FIELD_W - SRC_W, y: FIELD_H - SRC_H, w: SRC_W, h: SRC_H, type: 'source', side: 'red',  corner: 'br'} };
+    const blueSrc = { ...{x: 0,               y: FIELD_H - SRC_H, w: SRC_W, h: SRC_H, type: 'source', side: 'blue', corner: 'bl'} };
+    zones.push(redSrc, blueSrc);
+}
+
+function spawnNotes() {
+    notes = [];
+    const redWingX = 115 * S;
+    const blueWingX = FIELD_W - 115 * S;
+    const wingYs = [FIELD_H * 0.25, FIELD_H * 0.50, FIELD_H * 0.75];
+    wingYs.forEach(y => {
+        notes.push({ x: redWingX, y, active: true, r: NOTE_R });
+        notes.push({ x: blueWingX, y, active: true, r: NOTE_R });
+    });
+    const cx = FIELD_W / 2;
+    const cYs = [FIELD_H*0.13, FIELD_H*0.32, FIELD_H*0.50, FIELD_H*0.68, FIELD_H*0.87];
+    cYs.forEach(y => notes.push({ x: cx, y, active: true, r: NOTE_R }));
+}
+
+function tickMatch() {
+    if (!matchRunning) return;
+    matchElapsed += 1/60;
+    const now = Date.now();
+    if (matchElapsed >= MATCH_TOTAL) {
+        matchRunning = false;
+        document.getElementById('match-clock').innerText = "0:00";
+        document.getElementById('phase-label').innerText = "MATCH OVER";
+        document.getElementById('start-btn-main').innerText = "▶ START MATCH";
+        document.getElementById('start-btn-main').classList.remove('running');
+        return;
+    }
+    let phaseIdx = MATCH_PHASES.findIndex(p => matchElapsed >= p.start && matchElapsed < p.end);
+    if (phaseIdx === -1) phaseIdx = 2;
+    const phase = MATCH_PHASES[phaseIdx];
+    document.getElementById('match-clock').innerText = formatTime(MATCH_TOTAL - matchElapsed);
+    document.getElementById('phase-label').innerText = phase.name;
+    document.getElementById('phase-timer').innerText = Math.max(0, Math.ceil(phase.end - matchElapsed)) + "s";
+    updateAmpDisplays(now);
+    updateHudBar();
+    trySourceSpawn(now);
+}
+
+function trySourceSpawn(now) {
+    zones.filter(z => z.type === 'source').forEach(src => {
+        if (now - (lastSourceSpawn[src.side] || 0) < SOURCE_SPAWN_COOLDOWN) return;
+        // Drop point: just inside the triangle's hypotenuse (the diagonal facing the field)
+        let dropX, dropY, scx, scy;
+        if (src.corner === 'br') {
+            dropX = src.x + src.w * 0.65;
+            dropY = src.y + src.h * 0.35;
+        } else { // 'bl'
+            dropX = src.x + src.w * 0.35;
+            dropY = src.y + src.h * 0.35;
+        }
+        scx = dropX; scy = dropY;
+        // Count active notes + projectiles + held inventory within radius
+        let nearby = 0;
+        for (const n of notes) {
+            if (!n.active) continue;
+            if (Math.hypot(n.x - scx, n.y - scy) < SOURCE_NEARBY_RADIUS) nearby++;
+        }
+        for (const p of projectiles) {
+            if (Math.hypot(p.x - scx, p.y - scy) < SOURCE_NEARBY_RADIUS) nearby++;
+        }
+        if (nearby >= SOURCE_MAX_NEARBY) return;
+        notes.push({ x: dropX, y: dropY, r: NOTE_R, active: true, vx: 0, vy: 0 });
+        lastSourceSpawn[src.side] = now;
+    });
+}
+
+function updateAmpDisplays(now) {
+    const redAmpEl = document.getElementById('redAmpDisplay');
+    const blueAmpEl = document.getElementById('blueAmpDisplay');
+    if (now < redAmplifiedUntil) {
+        redAmpEl.innerText = `AMP! ${Math.ceil((redAmplifiedUntil - now) / 1000)}s`;
+        redAmpEl.style.color = '#22c55e';
+    } else {
+        redAmpEl.innerText = `${redAmpNotes}/2`;
+        redAmpEl.style.color = redAmpNotes > 0 ? '#fbbf24' : '#888';
+    }
+    if (now < blueAmplifiedUntil) {
+        blueAmpEl.innerText = `AMP! ${Math.ceil((blueAmplifiedUntil - now) / 1000)}s`;
+        blueAmpEl.style.color = '#22c55e';
+    } else {
+        blueAmpEl.innerText = `${blueAmpNotes}/2`;
+        blueAmpEl.style.color = blueAmpNotes > 0 ? '#fbbf24' : '#888';
+    }
+}
+
+function updateHudBar() {
+    const hud = document.getElementById('main-hud');
+    if (!matchRunning) { hud.style.borderBottomColor = '#fbbf24'; return; }
+    const now = Date.now();
+    const redAmp = now < redAmplifiedUntil, blueAmp = now < blueAmplifiedUntil;
+    if (redAmp && blueAmp) hud.style.borderBottomColor = '#22c55e';
+    else if (redAmp) hud.style.borderBottomColor = 'rgb(239,68,68)';
+    else if (blueAmp) hud.style.borderBottomColor = 'rgb(59,130,246)';
+    else hud.style.borderBottomColor = '#fbbf24';
+}
+
+function fireNoteProjectile(robot, alliance, isShooting) {
+    if (robot.inventory <= 0) return false;
+    const rcx = robot.x + robot.model.w / 2;
+    const rcy = robot.y + robot.model.h / 2;
+    let launchAngle = robot.angle;
+    let speed = 16;
+    if (isShooting) {
+        const z = zones.find(z => z.type === 'speaker' && z.side === alliance);
+        if (z) {
+            launchAngle = Math.atan2((z.y + z.h/2) - rcy, (z.x + z.w/2) - rcx);
+        }
+    } else {
+        // pass to the nearest far corner on our own alliance side
+        const tx = alliance === 'red' ? 40 : FIELD_W - 40;
+        const ty = rcy < FIELD_H / 2 ? 40 : FIELD_H - 40;
+        launchAngle = Math.atan2(ty - rcy, tx - rcx);
+        speed = 13 + (Math.hypot(tx - rcx, ty - rcy) * 0.012);
+    }
+    projectiles.push({
+        x: rcx + Math.cos(robot.angle) * (robot.model.w / 2 + 5),
+        y: rcy + Math.sin(robot.angle) * (robot.model.w / 2 + 5),
+        vx: Math.cos(launchAngle) * speed,
+        vy: Math.sin(launchAngle) * speed,
+        r: NOTE_R * 0.55,
+        owner: alliance,
+        isPass: !isShooting
+    });
+    robot.inventory--;
+    document.getElementById(alliance === 'red' ? 'heldRed' : 'heldBlue').innerText = robot.inventory;
+    return true;
+}
+
+function tryScoreNote(robot, alliance) {
+    if (robot.inventory <= 0) return false;
+
+    const rcx = robot.x + robot.model.w / 2;
+    const rcy = robot.y + robot.model.h / 2;
+    const now = Date.now();
+
+    // =========================================================
+    // DETERMINE IF ROBOT IS INSIDE ITS ALLIANCE SHOOTING ZONE
+    // =========================================================
+
+    // Red shoots from left side of field
+    // Blue shoots from right side of field
+    const inAllianceZone =
+        alliance === 'red'
+            ? rcx < FIELD_W * 0.5
+            : rcx > FIELD_W * 0.5;
+
+    // =========================================================
+    // OUTSIDE ZONE = FORCE PASS MODE
+    // =========================================================
+
+    if (!inAllianceZone) {
+        return fireNoteProjectile(robot, alliance, false);
+    }
+
+    // =========================================================
+    // AMP SCORING
+    // =========================================================
+
+    const isAmplified =
+        alliance === 'red'
+            ? now < redAmplifiedUntil
+            : now < blueAmplifiedUntil;
+
+    const amp = zones.find(
+        z => z.type === 'amp' && z.side === alliance
+    );
+
+    if (amp) {
+
+        const acx = amp.x + amp.w / 2;
+        const acy = amp.y + amp.h / 2;
+
+        if (Math.hypot(rcx - acx, rcy - acy) < SCORE_DIST) {
+
+            robot.inventory--;
+
+            if (alliance === 'red') {
+
+                scoreRed += 1;
+
+                document.getElementById(
+                    'scoreRedDisplay'
+                ).innerText = scoreRed;
+
+                redAmpNotes++;
+
+                if (redAmpNotes >= 2) {
+                    redAmplifiedUntil = now + 10000;
+                    redAmpNotes = 0;
+                }
+
+            } else {
+
+                scoreBlue += 1;
+
+                document.getElementById(
+                    'scoreBlueDisplay'
+                ).innerText = scoreBlue;
+
+                blueAmpNotes++;
+
+                if (blueAmpNotes >= 2) {
+                    blueAmplifiedUntil = now + 10000;
+                    blueAmpNotes = 0;
+                }
+            }
+
+            document.getElementById(
+                alliance === 'red'
+                    ? 'heldRed'
+                    : 'heldBlue'
+            ).innerText = robot.inventory;
+
+            robot.scoreFlash = 18;
+            robot.scoreFlashPts = 1;
+
+            return true;
+        }
+    }
+
+    // =========================================================
+    // INSIDE ALLIANCE ZONE = NORMAL SPEAKER SHOT
+    // =========================================================
+
+    return fireNoteProjectile(robot, alliance, true);
+}
+
+function updateProjectiles() {
+    const now = Date.now();
+    projectiles = projectiles.filter(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.isPass) { p.vx *= 0.975; p.vy *= 0.975; }
+        // Pass slowed enough → convert back to a pickup-able note
+        if (p.isPass && Math.hypot(p.vx, p.vy) < 0.95) {
+            notes.push({ x: p.x, y: p.y, r: NOTE_R, active: true });
+            return false;
+        }
+        // Speaker scoring
+        const spk = zones.find(z => z.type === 'speaker' && z.side === p.owner);
+        if (spk) {
+            const scx = spk.x + spk.w / 2, scy = spk.y + spk.h / 2;
+            if (Math.hypot(p.x - scx, p.y - scy) < Math.max(spk.w, spk.h) / 2) {
+                if (matchRunning) {
+                    const isAmplified = p.owner === 'red' ? now < redAmplifiedUntil : now < blueAmplifiedUntil;
+                    const pts = isAmplified ? 5 : 2;
+                    if (p.owner === 'red') { scoreRed += pts; document.getElementById('scoreRedDisplay').innerText = scoreRed; }
+                    else { scoreBlue += pts; document.getElementById('scoreBlueDisplay').innerText = scoreBlue; }
+                }
+                return false;
+            }
+        }
+        // Off-field → drop note where it landed (clamped) so it can be picked up
+        if (p.x < 0 || p.x > FIELD_W || p.y < 0 || p.y > FIELD_H) {
+            const nx = Math.max(NOTE_R, Math.min(FIELD_W - NOTE_R, p.x));
+            const ny = Math.max(NOTE_R, Math.min(FIELD_H - NOTE_R, p.y));
+            notes.push({ x: nx, y: ny, r: NOTE_R, active: true });
+            return false;
+        }
+        return true;
+    });
+}
+
+function drawProjectiles() {
+    projectiles.forEach(p => {
+        ctx.fillStyle = '#fb923c';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#1a1f2e';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r*0.45, 0, Math.PI*2); ctx.fill();
+    });
+}
+
+// Friction + wall bounce for loose notes on the floor.
+function updateNotePhysics() {
+    for (const n of notes) {
+        if (!n.active) continue;
+        if (n.vx === undefined) { n.vx = 0; n.vy = 0; }
+        n.x += n.vx; n.y += n.vy;
+        n.vx *= 0.88; n.vy *= 0.88;
+        if (Math.abs(n.vx) < 0.03) n.vx = 0;
+        if (Math.abs(n.vy) < 0.03) n.vy = 0;
+        // Wall bounce
+        if (n.x < n.r)            { n.x = n.r;            n.vx = Math.abs(n.vx) * 0.5; }
+        if (n.x > FIELD_W - n.r)  { n.x = FIELD_W - n.r;  n.vx = -Math.abs(n.vx) * 0.5; }
+        if (n.y < n.r)            { n.y = n.r;            n.vy = Math.abs(n.vy) * 0.5; }
+        if (n.y > FIELD_H - n.r)  { n.y = FIELD_H - n.r;  n.vy = -Math.abs(n.vy) * 0.5; }
+    }
+    // Note-on-note nudges so stacked spawns separate
+    for (let i = 0; i < notes.length; i++) {
+        const a = notes[i]; if (!a.active) continue;
+        for (let j = i + 1; j < notes.length; j++) {
+            const b = notes[j]; if (!b.active) continue;
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const d = Math.hypot(dx, dy);
+            const minD = a.r + b.r;
+            if (d > 0 && d < minD) {
+                const push = (minD - d) / 2;
+                const ux = dx / d, uy = dy / d;
+                a.x -= ux * push; a.y -= uy * push;
+                b.x += ux * push; b.y += uy * push;
+            }
+        }
+    }
+}
+
+class Robot {
+    constructor(x, y, modelKey, startingAngle) {
+        this.x = x; this.y = y; this.vx = 0; this.vy = 0;
+        this.angle = startingAngle; this.vAngle = 0;
+        this.inventory = 0;
+        this.model = BOT_MODELS[modelKey] || BOT_MODELS['Standard'];
+        this.scoreFlash = 0;
+        this.scoreFlashPts = 0;
+        this.prevActInput = false;
+    }
+    update(moveX, moveY, rotInput, rawActInput, rawPassInput) {
+        this.vx += moveX * this.model.accel;
+        this.vy += moveY * this.model.accel;
+        this.vAngle += rotInput * this.model.rotSpeed;
+        this.vx *= 0.91; this.vy *= 0.91; this.vAngle *= 0.78;
+        this.x = Math.max(0, Math.min(FIELD_W - this.model.w, this.x + this.vx));
+        this.y = Math.max(0, Math.min(FIELD_H - this.model.h, this.y + this.vy));
+        this.angle += this.vAngle;
+        const rcx = this.x + this.model.w / 2, rcy = this.y + this.model.h / 2;
+        const alliance = (this === botRed || this === botRed2) ? 'red' : 'blue';
+        if (matchRunning) {
+            for (let i = 0; i < notes.length; i++) {
+                if (!notes[i].active) continue;
+                const n = notes[i];
+                const dx = n.x - rcx, dy = n.y - rcy;
+                const dist = Math.hypot(dx, dy);
+                // Robot collision radius (approx half its body width)
+                const robotR = this.model.w / 2;
+                if (this.inventory === 0 && this.inventory < this.model.capacity) {
+                    if (Math.hypot(notes[i].x - rcx, notes[i].y - rcy) < PICKUP_DIST) {
+                        notes[i].active = false; this.inventory++;
+                        document.getElementById(alliance === 'red' ? 'heldRed' : 'heldBlue').innerText = this.inventory;
+                        continue;
+                    }
+                }
+                // Bump physics: if already holding (or at capacity), push the note.
+                const minD = robotR + n.r;
+                if (dist > 0 && dist < minD) {
+                    const ux = dx / dist, uy = dy / dist;
+                    const overlap = (minD - dist);
+                    n.x += ux * overlap;
+                    n.y += uy * overlap;
+                    // Transfer some robot momentum into the note
+                    if (n.vx === undefined) { n.vx = 0; n.vy = 0; }
+                    n.vx = n.vx * 0.4 + (this.vx * 0.9 + ux * 1.2);
+                    n.vy = n.vy * 0.4 + (this.vy * 0.9 + uy * 1.2);
+                }
+            }
+        }
+        if (rawActInput && !this.prevActInput) { tryScoreNote(this, alliance); }
+        if (rawPassInput && !this.prevPassInput) { fireNoteProjectile(this, alliance, false); }
+        this.prevActInput = rawActInput;
+        this.prevPassInput = rawPassInput;
+        if (this.scoreFlash > 0) this.scoreFlash--;
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(this.x + this.model.w/2, this.y + this.model.h/2);
+        ctx.rotate(this.angle);
+        ctx.fillStyle = (this === botRed || this === botRed2) ? '#ef4444' : '#3b82f6';
+        ctx.fillRect(-this.model.w/2, -this.model.h/2, this.model.w, this.model.h);
+        ctx.fillStyle = 'white'; ctx.fillRect(this.model.w/2 - 8, -2, 8, 4);
+        ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.strokeRect(-this.model.w/2, -this.model.h/2, this.model.w, this.model.h);
+        ctx.restore();
+        if (this.scoreFlash > 0) {
+            ctx.fillStyle = `rgba(255,255,255,${this.scoreFlash/18})`;
+            ctx.font = 'bold 16px Segoe UI'; ctx.textAlign = 'center';
+            ctx.fillText(`+${this.scoreFlashPts}`, this.x + this.model.w/2, this.y - 10);
+        }
+    }
+}
+
+let botRed  = new Robot(80, FIELD_H/2 - 25, 'Standard', 0);
+let botRed2 = new Robot(80, FIELD_H/2 + 25, 'Standard', 0);
+let botBlue  = new Robot(FIELD_W - 115, FIELD_H/2 - 25, 'Standard', Math.PI);
+let botBlue2 = new Robot(FIELD_W - 115, FIELD_H/2 + 25, 'Standard', Math.PI);
+
+function update() {
+    let p1MoveX = 0, p1MoveY = 0, p1Rot = 0, p1Act = false, p1Pass = false;
+    if (p1Enabled) {
+        if (keys['KeyW']) p1MoveY--; if (keys['KeyS']) p1MoveY++;
+        if (keys['KeyA']) p1MoveX--; if (keys['KeyD']) p1MoveX++;
+        if (keys['KeyQ']) p1Rot -= 1; if (keys['KeyE']) p1Rot += 1;
+        if (keys['Space']) p1Act = true;
+        if (keys['KeyF']) p1Pass = true;
+        botRed.update(p1MoveX, p1MoveY, p1Rot, p1Act, p1Pass);
+    }
+    let p3MoveX = 0, p3MoveY = 0, p3Rot = 0, p3Act = false, p3Pass = false;
+    if (p3Enabled) {
+        if (keys['ArrowUp']) p3MoveY--; if (keys['ArrowDown']) p3MoveY++;
+        if (keys['ArrowLeft']) p3MoveX--; if (keys['ArrowRight']) p3MoveX++;
+        if (keys['KeyN']) p3Rot -= 1; if (keys['KeyM']) p3Rot += 1;
+        if (keys['ShiftRight']) p3Act = true;
+        if (keys['Slash']) p3Pass = true;
+        botBlue.update(p3MoveX, p3MoveY, p3Rot, p3Act, p3Pass);
+    }
+    updateProjectiles();
+    updateNotePhysics();
+    tickMatch();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(WALL_VISUAL, WALL_VISUAL);
+    ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, FIELD_W, FIELD_H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    const gridSz = 30 * S;
+    for (let x = 0; x < FIELD_W; x += gridSz) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, FIELD_H); ctx.stroke(); }
+    for (let y = 0; y < FIELD_H; y += gridSz) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(FIELD_W, y); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.setLineDash([14, 8]);
+    ctx.beginPath(); ctx.moveTo(FIELD_W/2, 0); ctx.lineTo(FIELD_W/2, FIELD_H); ctx.stroke(); ctx.setLineDash([]);
+    drawScoringZoneLines();
+    drawStage();
+    zones.forEach(z => {
+        const c = z.side === 'red' ? '239,68,68' : (z.side === 'blue' ? '59,130,246' : '160,140,220');
+        if (z.type === 'source') {
+            // Diagonal corner chute
+            ctx.fillStyle = `rgba(${c},0.2)`;
+            ctx.strokeStyle = `rgb(${c})`; ctx.lineWidth = 2;
+            ctx.beginPath();
+            if (z.corner === 'br') {
+                ctx.moveTo(z.x + z.w, z.y);
+                ctx.lineTo(z.x + z.w, z.y + z.h);
+                ctx.lineTo(z.x,       z.y + z.h);
+            } else { // 'bl'
+                ctx.moveTo(z.x,       z.y);
+                ctx.lineTo(z.x,       z.y + z.h);
+                ctx.lineTo(z.x + z.w, z.y + z.h);
+            }
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = `rgb(${c})`; ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center';
+            const lx = z.corner === 'br' ? z.x + z.w * 0.72 : z.x + z.w * 0.28;
+            const ly = z.y + z.h * 0.78;
+            ctx.fillText('SOURCE', lx, ly);
+            return;
+        }
+        ctx.fillStyle = `rgba(${c},0.2)`; ctx.fillRect(z.x, z.y, z.w, z.h);
+        ctx.strokeStyle = `rgb(${c})`; ctx.lineWidth = 2; ctx.strokeRect(z.x, z.y, z.w, z.h);
+        ctx.fillStyle = `rgb(${c})`; ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center';
+        ctx.fillText(z.type.toUpperCase(), z.x + z.w/2, z.y + z.h/2 + 5);
+    });
+    notes.forEach(n => {
+        if (!n.active) return;
+        ctx.fillStyle = '#fb923c'; ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#1a1f2e'; ctx.beginPath(); ctx.arc(n.x, n.y, n.r*0.5, 0, Math.PI*2); ctx.fill();
+    });
+    botRed.draw(); botBlue.draw();
+    drawProjectiles();
+    ctx.restore();
+    requestAnimationFrame(draw);
+}
+
+function drawStage() {
+    const cy = FIELD_H / 2, armR = 75 * S;
+    // Rotated so each stage's flat back-edge faces the center line.
+    const baseRot = 60 * (Math.PI / 180) + Math.PI;
+    // Red stage points apex toward red wall (+180° from center); blue mirrors it.
+    // Adding 180° to the blue rotation keeps both back-walls (the edge opposite
+    // the apex on the center-facing side) parallel to each other.
+    [
+        {x: FIELD_W * 0.35, side: 'red',  rotation: Math.PI + baseRot},
+        {x: FIELD_W * 0.65, side: 'blue', rotation: baseRot}
+    ].forEach(st => {
+        ctx.save(); ctx.translate(st.x, cy); ctx.rotate(st.rotation);
+        const color = st.side === 'red' ? 'rgba(239,68,68,0.75)' : 'rgba(59,130,246,0.75)';
+        ctx.beginPath();
+        for (let i = 0; i < 3; i++) {
+            const ang = (i * Math.PI * 2 / 3);
+            const px = Math.cos(ang) * armR, py = Math.sin(ang) * armR;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = st.side === 'red' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)'; ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
+        for (let i = 0; i < 3; i++) {
+            const ang = (i * Math.PI * 2 / 3);
+            ctx.fillStyle = '#666'; ctx.fillRect(Math.cos(ang)*armR - 6, Math.sin(ang)*armR - 6, 12, 12);
+        }
+        ctx.restore();
+    });
+}
+
+// Splits field into three zones: red scoring | middle passing | blue scoring.
+// Red wing line sits at ~35% of field width, blue wing line mirrors it.
+function drawScoringZoneLines() {
+    const redX = FIELD_W * 0.35;
+    const blueX = FIELD_W * 0.65;
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 6]);
+    // Red wing boundary (red side ↔ middle)
+    ctx.strokeStyle = 'rgba(239,68,68,0.55)';
+    ctx.beginPath(); ctx.moveTo(redX, 0); ctx.lineTo(redX, FIELD_H); ctx.stroke();
+    // Blue wing boundary (middle ↔ blue side)
+    ctx.strokeStyle = 'rgba(59,130,246,0.55)';
+    ctx.beginPath(); ctx.moveTo(blueX, 0); ctx.lineTo(blueX, FIELD_H); ctx.stroke();
+    ctx.restore();
+    ctx.setLineDash([]);
+}
+
+function formatTime(s) {
+    s = Math.max(0, Math.ceil(s));
+    let m = Math.floor(s / 60), sec = s % 60;
+    return m + ":" + (sec < 10 ? "0" : "") + sec;
+}
+
+function resetBots() {
+    botRed.x = 80; botRed.y = FIELD_H/2 - 25; botRed.vx=0; botRed.vy=0; botRed.angle=0; botRed.inventory=0;
+    botBlue.x = FIELD_W - 120; botBlue.y = FIELD_H/2 - 25; botBlue.vx=0; botBlue.vy=0; botBlue.angle=Math.PI; botBlue.inventory=0;
+    document.getElementById('heldRed').innerText = '0'; document.getElementById('heldBlue').innerText = '0';
+}
+
+function resetMatch() {
+    matchRunning = false; if (countdownInterval) clearInterval(countdownInterval);
+    matchElapsed = 0; scoreRed = 0; scoreBlue = 0; redAmpNotes = 0; blueAmpNotes = 0; redAmplifiedUntil = 0; blueAmplifiedUntil = 0;
+    document.getElementById('scoreRedDisplay').innerText = '0'; document.getElementById('scoreBlueDisplay').innerText = '0';
+    document.getElementById('match-clock').innerText = '2:30'; document.getElementById('match-clock').className = 'stopped';
+    document.getElementById('phase-label').innerText = 'MATCH NOT STARTED';
+    projectiles = []; spawnNotes(); resetBots();
+}
+
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+initField(); spawnNotes(); resetBots();
+setInterval(update, 1000 / 60);
+draw();
+
+// BUTTON WIRING
+document.getElementById('toggle-controls-btn-blue').onclick = function() {
+    const p = document.getElementById('control-panel-blue');
+    p.classList.toggle('collapsed');
+    this.innerText = p.classList.contains('collapsed') ? '☰ SHOW BLUE' : '☰ HIDE BLUE';
+};
+document.getElementById('toggle-controls-btn-red').onclick = function() {
+    const p = document.getElementById('control-panel-red');
+    p.classList.toggle('collapsed');
+    this.innerText = p.classList.contains('collapsed') ? '☰ SHOW RED' : '☰ HIDE RED';
+};
+document.querySelectorAll('.player-card-collapse').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const card = document.getElementById(btn.dataset.target);
+        if (card) {
+            card.classList.toggle('collapsed');
+            btn.innerText = card.classList.contains('collapsed') ? '+' : '−';
+        }
+    });
+});
+document.getElementById('show-controls-btn-blue').onclick = () => document.getElementById('controls-modal').classList.remove('hidden');
+document.getElementById('show-controls-btn-red').onclick = () => document.getElementById('controls-modal').classList.remove('hidden');
+document.getElementById('close-controls-btn').onclick = () => document.getElementById('controls-modal').classList.add('hidden');
+
+document.getElementById('p1-toggle').onclick = () => { p1Enabled = !p1Enabled; const btn = document.getElementById('p1-toggle'); btn.innerText = 'P1: ' + (p1Enabled ? 'ON' : 'OFF'); btn.classList.toggle('disabled', !p1Enabled); resetBots(); };
+document.getElementById('p2-toggle').onclick = () => { p2Enabled = !p2Enabled; const btn = document.getElementById('p2-toggle'); btn.innerText = 'P2: ' + (p2Enabled ? 'ON' : 'OFF'); btn.classList.toggle('disabled', !p2Enabled); resetBots(); };
+document.getElementById('p3-toggle').onclick = () => { p3Enabled = !p3Enabled; const btn = document.getElementById('p3-toggle'); btn.innerText = 'P3: ' + (p3Enabled ? 'ON' : 'OFF'); btn.classList.toggle('disabled', !p3Enabled); resetBots(); };
+document.getElementById('p4-toggle').onclick = () => { p4Enabled = !p4Enabled; const btn = document.getElementById('p4-toggle'); btn.innerText = 'P4: ' + (p4Enabled ? 'ON' : 'OFF'); btn.classList.toggle('disabled', !p4Enabled); resetBots(); };
+
+document.getElementById('start-btn-main').onclick = () => {
+    if (matchRunning) resetMatch();
+    else {
+        matchRunning = true;
+        document.getElementById('start-btn-main').innerText = '⏹ STOP MATCH';
+        document.getElementById('start-btn-main').classList.add('running');
+    }
+};
+document.getElementById('reset-btn-center').onclick = resetMatch;
+</script>
+</body>
+</html>
