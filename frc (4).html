@@ -626,24 +626,100 @@ function fireNoteProjectile(robot, alliance, isShooting) {
 
 function tryScoreNote(robot, alliance) {
     if (robot.inventory <= 0) return false;
+
     const rcx = robot.x + robot.model.w / 2;
     const rcy = robot.y + robot.model.h / 2;
     const now = Date.now();
-    const isAmplified = alliance === 'red' ? now < redAmplifiedUntil : now < blueAmplifiedUntil;
-    // Amp = close-range deposit, still instant.
-    const amp = zones.find(z => z.type === 'amp' && z.side === alliance);
+
+    // =========================================================
+    // DETERMINE IF ROBOT IS INSIDE ITS ALLIANCE SHOOTING ZONE
+    // =========================================================
+
+    // Red shoots from left side of field
+    // Blue shoots from right side of field
+    const inAllianceZone =
+        alliance === 'red'
+            ? rcx < FIELD_W * 0.5
+            : rcx > FIELD_W * 0.5;
+
+    // =========================================================
+    // OUTSIDE ZONE = FORCE PASS MODE
+    // =========================================================
+
+    if (!inAllianceZone) {
+        return fireNoteProjectile(robot, alliance, false);
+    }
+
+    // =========================================================
+    // AMP SCORING
+    // =========================================================
+
+    const isAmplified =
+        alliance === 'red'
+            ? now < redAmplifiedUntil
+            : now < blueAmplifiedUntil;
+
+    const amp = zones.find(
+        z => z.type === 'amp' && z.side === alliance
+    );
+
     if (amp) {
-        const acx = amp.x + amp.w / 2, acy = amp.y + amp.h / 2;
+
+        const acx = amp.x + amp.w / 2;
+        const acy = amp.y + amp.h / 2;
+
         if (Math.hypot(rcx - acx, rcy - acy) < SCORE_DIST) {
+
             robot.inventory--;
-            if (alliance === 'red') { scoreRed += 1; document.getElementById('scoreRedDisplay').innerText = scoreRed; redAmpNotes++; if (redAmpNotes >= 2) { redAmplifiedUntil = now + 10000; redAmpNotes = 0; } }
-            else { scoreBlue += 1; document.getElementById('scoreBlueDisplay').innerText = scoreBlue; blueAmpNotes++; if (blueAmpNotes >= 2) { blueAmplifiedUntil = now + 10000; blueAmpNotes = 0; } }
-            document.getElementById(alliance === 'red' ? 'heldRed' : 'heldBlue').innerText = robot.inventory;
-            robot.scoreFlash = 18; robot.scoreFlashPts = 1;
+
+            if (alliance === 'red') {
+
+                scoreRed += 1;
+
+                document.getElementById(
+                    'scoreRedDisplay'
+                ).innerText = scoreRed;
+
+                redAmpNotes++;
+
+                if (redAmpNotes >= 2) {
+                    redAmplifiedUntil = now + 10000;
+                    redAmpNotes = 0;
+                }
+
+            } else {
+
+                scoreBlue += 1;
+
+                document.getElementById(
+                    'scoreBlueDisplay'
+                ).innerText = scoreBlue;
+
+                blueAmpNotes++;
+
+                if (blueAmpNotes >= 2) {
+                    blueAmplifiedUntil = now + 10000;
+                    blueAmpNotes = 0;
+                }
+            }
+
+            document.getElementById(
+                alliance === 'red'
+                    ? 'heldRed'
+                    : 'heldBlue'
+            ).innerText = robot.inventory;
+
+            robot.scoreFlash = 18;
+            robot.scoreFlashPts = 1;
+
             return true;
         }
     }
-    // Speaker = launch a projectile aimed at the goal.
+
+    // =========================================================
+    // INSIDE ALLIANCE ZONE = NORMAL SPEAKER SHOT
+    // =========================================================
+
     return fireNoteProjectile(robot, alliance, true);
 }
 
