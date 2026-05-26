@@ -869,6 +869,13 @@ function update() {
         if (keys['KeyQ']) p1Rot -= 1; if (keys['KeyE']) p1Rot += 1;
         if (keys['Space']) p1Act = true;
         if (keys['KeyF']) p1Pass = true;
+        if (keys[' '] || keys['Space']) {
+
+    tryScoreNote(
+        robot,
+        alliance
+    );
+}
         botRed.update(p1MoveX, p1MoveY, p1Rot, p1Act, p1Pass);
     }
     let p3MoveX = 0, p3MoveY = 0, p3Rot = 0, p3Act = false, p3Pass = false;
